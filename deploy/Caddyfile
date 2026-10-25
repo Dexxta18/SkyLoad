@@ -1,0 +1,5 @@
+# HTTPS front door. Caddy gets and renews a Let's Encrypt certificate for $DOMAIN
+# automatically, and streams Server-Sent Events (live progress) without buffering.
+{$DOMAIN} {
+	reverse_proxy app:3000
+}

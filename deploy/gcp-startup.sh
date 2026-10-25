@@ -85,4 +85,17 @@ log "building and starting"
 cd "$APP"
 docker compose up -d --build --remove-orphans
 docker image prune -f >/dev/null || true
+
+# Report health to the serial console so it can be checked without SSH.
+healthy=no
+for _ in $(seq 1 40); do
+  if docker compose exec -T app node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" 2>/dev/null; then
+    healthy=yes
+    break
+  fi
+  sleep 3
+done
+log "app healthy: $healthy"
+docker compose ps --format '{{.Service}}: {{.Status}}' | sed 's/^/skyload-startup:   /'
+docker compose logs --no-color --tail 15 app caddy 2>&1 | sed 's/^/skyload-startup:   /'
 log "done"

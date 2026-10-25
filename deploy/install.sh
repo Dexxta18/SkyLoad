@@ -8,6 +8,9 @@
 # It installs Docker if needed, asks for your domain and Google credentials,
 # writes .env with fresh secrets, opens the firewall and starts everything.
 # Safe to run again: an existing .env is kept.
+#
+# Answers can be given up front instead of typed, for example:
+#   sudo DOMAIN=skyload.example.com TORRENT_UPLOAD_LIMIT_KBPS=2048 ./deploy/install.sh
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -50,17 +53,21 @@ if [ -f .env ]; then
   DOMAIN=$(grep -E '^DOMAIN=' .env | cut -d= -f2-)
 else
   say "A few questions (you can change answers later in the .env file)"
-  read -rp "Domain for Skyload, already pointing at this server (e.g. skyload.example.com): " DOMAIN
+  ask() { # ask VAR "question" [default]: skipped when VAR is already set in the environment
+    if [ -z "${!1:-}" ]; then
+      read -rp "$2${3:+ [$3]}: " "$1"
+      [ -n "${!1}" ] || printf -v "$1" '%s' "${3:-}"
+    fi
+  }
+  ask DOMAIN "Domain for Skyload, already pointing at this server (e.g. skyload.example.com)"
   DOMAIN=${DOMAIN#https://}
   DOMAIN=${DOMAIN#http://}
   DOMAIN=${DOMAIN%/}
   [ -n "$DOMAIN" ] || die "A domain is required for HTTPS and Google sign-in."
-  read -rp "Google OAuth client ID: " GOOGLE_CLIENT_ID
-  read -rp "Google OAuth client secret: " GOOGLE_CLIENT_SECRET
-  read -rp "Google Drive access, 'full' or 'file' (see DEPLOY.md) [full]: " GOOGLE_DRIVE_SCOPE
-  GOOGLE_DRIVE_SCOPE=${GOOGLE_DRIVE_SCOPE:-full}
-  read -rp "Largest torrent allowed, in GB [50]: " MAX_TORRENT_SIZE_GB
-  MAX_TORRENT_SIZE_GB=${MAX_TORRENT_SIZE_GB:-50}
+  ask GOOGLE_CLIENT_ID "Google OAuth client ID"
+  ask GOOGLE_CLIENT_SECRET "Google OAuth client secret"
+  ask GOOGLE_DRIVE_SCOPE "Google Drive access, 'full' or 'file' (see DEPLOY.md)" full
+  ask MAX_TORRENT_SIZE_GB "Largest torrent allowed, in GB" 50
 
   umask 077
   cat >.env <<EOF
@@ -86,6 +93,8 @@ MAX_TORRENT_SIZE_GB=$MAX_TORRENT_SIZE_GB
 MAX_ACTIVE_JOBS_PER_USER=2
 WORKER_CONCURRENCY=3
 TORRENT_PORT=6881
+# Caps how fast we upload to other peers (0 = unlimited). Useful where outbound traffic is billed.
+TORRENT_UPLOAD_LIMIT_KBPS=${TORRENT_UPLOAD_LIMIT_KBPS:-0}
 EOF
   umask 022
   [ -n "$GOOGLE_CLIENT_ID" ] || warn "No Google client ID yet. Add it to .env, then run: docker compose up -d"

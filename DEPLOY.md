@@ -16,6 +16,23 @@ Everything below can be done from a laptop. Steps 1–3 also work from a phone; 
 
 ## 1. Get a server
 
+### Option A: Google Cloud (recommended if you already use it)
+
+Google Cloud suits Skyload: incoming downloads are free, and [traffic from a VM to Google Drive is free](https://cloud.google.com/vpc/network-pricing). You pay for the VM and its disk, plus outbound traffic to other BitTorrent peers and to non-Google clouds. The installer can cap the peer traffic. An `e2-medium` VM with a 100 GB disk is very roughly $35/month; check the [pricing calculator](https://cloud.google.com/products/calculator) for your region. Google Cloud's [acceptable use policy](https://cloud.google.com/terms/aup) doesn't ban P2P traffic, but it does forbid infringing content, so keep downloads legal.
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), pick (or create) a project and make sure **billing is enabled** for it.
+2. Open **Cloud Shell** (the `>_` icon at the top right, or https://shell.cloud.google.com) and run the following. GitHub asks for a username and token; see [step 4](#4-install-skyload-on-the-server).
+   ```bash
+   gcloud config set project YOUR_PROJECT_ID
+   git clone https://github.com/Dexxta18/SkyLoad.git skyload
+   bash skyload/deploy/gcp-create-vm.sh
+   ```
+   This creates a VM called `skyload` (Ubuntu 24.04, e2-medium, 100 GB disk, in Belgium `europe-west1`), reserves a fixed IP address, and opens the firewall. It prints the IP address at the end; use it in step 2.
+
+   To change the defaults, set variables in front, e.g. `REGION=europe-west3 DISK_GB=200 bash skyload/deploy/gcp-create-vm.sh`.
+
+### Option B: another VPS provider
+
 **Requirements:** Ubuntu 24.04 (or Debian 12), at least 2 CPU cores, 4 GB RAM, and as much disk as the largest torrents you want to allow (100 GB or more is a good start). Prefer plans with generous or unmetered bandwidth, since every download comes in and then goes out again to Google.
 
 **The host must allow torrenting.** Many don't, and they suspend accounts that do it:
@@ -30,7 +47,7 @@ When the server is ready, note its **IP address** and **root password** (or SSH 
 
 1. Buy a domain from any registrar (Cloudflare, Porkbun, Namecheap and others), or use one you already own.
 2. In the domain's DNS settings, add an **A record**:
-   - Name: `skyload` (this gives you `skyload.yourdomain.com`; use `@` for the bare domain)
+   - Name: `skyload` (this gives you `skyload.yourdomain.com`, for example `skyload.dexxta.si`; don't use `@`, which would replace your existing website)
    - Value: your server's IP address
    - If you use Cloudflare, set the record to **DNS only** (grey cloud).
 3. It can take from a few minutes to an hour to take effect.
@@ -57,20 +74,20 @@ From here on, `YOUR_DOMAIN` means the full name, for example `skyload.yourdomain
 
 ## 4. Install Skyload on the server
 
-Connect to the server (replace the IP):
-
-```bash
-ssh root@203.0.113.10
-```
+Connect to the server:
+- **Google Cloud:** in Cloud Shell, run `gcloud compute ssh skyload --zone europe-west1-b`.
+- **Other VPS:** `ssh root@203.0.113.10` (use your server's IP).
 
 Download the code. The repository is private, so GitHub asks for a username and password. Use your GitHub username, and as the password a **personal access token**: GitHub → Settings → Developer settings → Personal access tokens → *Fine-grained tokens* → **Generate new token**, *Only select repositories: SkyLoad*, *Repository permissions → Contents: Read-only*.
 
 ```bash
-apt-get update && apt-get install -y git
+sudo apt-get update && sudo apt-get install -y git
 git clone https://github.com/Dexxta18/SkyLoad.git skyload
 cd skyload
-./deploy/install.sh
+sudo ./deploy/install.sh
 ```
+
+On Google Cloud, cap uploads to other peers to keep outbound traffic costs low: `sudo TORRENT_UPLOAD_LIMIT_KBPS=2048 ./deploy/install.sh`.
 
 The installer:
 - asks for your domain, the Google client ID and secret, which Drive access to use, and the largest torrent to allow
@@ -87,7 +104,7 @@ When it prints **Skyload is running**, open `https://YOUR_DOMAIN`. The HTTPS cer
 
 ## Everyday commands
 
-Run these on the server, inside the `skyload` folder:
+Run these on the server, inside the `skyload` folder. On Google Cloud (not logged in as root), put `sudo` in front of each `docker` command.
 
 | Task | Command |
 |---|---|

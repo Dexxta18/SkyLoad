@@ -1,12 +1,13 @@
-# Single-box deployment: Postgres + one container running both the web app and the worker.
-# Usage: cp .env.example .env, fill it in, then `docker compose up -d --build`.
+# Production deployment on one server: Postgres + Skyload (web and worker) + Caddy for HTTPS.
+# Easiest path: run ./deploy/install.sh, which writes .env and starts everything.
+# Manual path: cp .env.example .env, fill it in (including DOMAIN), then `docker compose up -d --build`.
 services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: skyload
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skyload}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: skyload
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -20,22 +21,43 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgres://skyload:${POSTGRES_PASSWORD:-skyload}@db:5432/skyload
+      DATABASE_URL: postgres://skyload:${POSTGRES_PASSWORD}@db:5432/skyload
+      APP_URL: https://${DOMAIN:?set DOMAIN in .env}
       ROLE: all
     depends_on:
       db:
         condition: service_healthy
+    expose:
+      - '3000'
     ports:
-      - '3000:3000'
+      # Incoming BitTorrent peers. Optional, but downloads are faster when reachable.
       - '6881:6881/tcp'
       - '6881:6881/udp'
     volumes:
       - downloads:/data
     stop_grace_period: 30s
 
-  # To run the web app and the torrent worker on different machines, deploy the
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+  # To run the website and the torrent worker on different machines, deploy the
   # same image twice with ROLE=web and ROLE=worker, both pointing at one Postgres.
 
 volumes:
   pgdata:
   downloads:
+  caddy_data:
+  caddy_config:

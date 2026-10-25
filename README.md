@@ -88,12 +88,16 @@ Mega needs no setup. Users enter their email and password (and 2FA code) once. S
 
 ## Deploying
 
+**Step-by-step guide: [DEPLOY.md](DEPLOY.md)** (server, domain, Google setup, one-command install).
+
+On a server with a domain pointing at it:
+
 ```bash
-cp .env.example .env   # set APP_URL, ENCRYPTION_KEY, Google credentials
-docker compose up -d --build
+git clone https://github.com/Dexxta18/SkyLoad.git skyload && cd skyload
+sudo ./deploy/install.sh
 ```
 
-This starts Postgres and the app on port 3000. Put it behind HTTPS (Caddy, nginx or your host's proxy). Opening port 6881 (TCP and UDP) lets peers connect to you, which makes downloads noticeably faster.
+The installer writes `.env` with fresh secrets and starts Postgres, the app, and Caddy, which gets an HTTPS certificate automatically. Opening port 6881 (TCP and UDP) lets peers connect to you, which makes downloads noticeably faster.
 
 ### ⚠️ Where to host the worker
 

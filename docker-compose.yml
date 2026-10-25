@@ -1,0 +1,41 @@
+# Single-box deployment: Postgres + one container running both the web app and the worker.
+# Usage: cp .env.example .env, fill it in, then `docker compose up -d --build`.
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: skyload
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skyload}
+      POSTGRES_DB: skyload
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U skyload']
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://skyload:${POSTGRES_PASSWORD:-skyload}@db:5432/skyload
+      ROLE: all
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - '3000:3000'
+      - '6881:6881/tcp'
+      - '6881:6881/udp'
+    volumes:
+      - downloads:/data
+    stop_grace_period: 30s
+
+  # To run the web app and the torrent worker on different machines, deploy the
+  # same image twice with ROLE=web and ROLE=worker, both pointing at one Postgres.
+
+volumes:
+  pgdata:
+  downloads:

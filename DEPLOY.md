@@ -102,6 +102,21 @@ When it prints **Skyload is running**, open `https://YOUR_DOMAIN`. The HTTPS cer
 2. Paste a magnet link for something legal and well seeded, such as an Ubuntu release from https://ubuntu.com/download/alternative-downloads (use the "BitTorrent" links).
 3. Watch it download, then open it in your Drive.
 
+## Alternative: a self-installing Google Cloud VM (no SSH needed)
+
+`deploy/gcp-startup.sh` is a Compute Engine startup script. On every boot it downloads the code from a private Cloud Storage bucket, keeps the generated secrets in `/opt/skyload/.env`, applies settings from instance metadata, and runs `docker compose`. This is how `skyload.dexxta.si` is deployed (project `skyload-dexxta`).
+
+| Instance metadata key | Value |
+|---|---|
+| `skyload-source` | `gs://BUCKET/releases/skyload.tar.gz` |
+| `skyload-domain` | e.g. `skyload.dexxta.si` |
+| `google-client-id`, `google-client-secret` | from step 3 |
+| `skyload-env` | optional extra `.env` lines, e.g. `MAX_TORRENT_SIZE_GB=30` |
+
+- **Ship a new version:** `PROJECT=skyload-dexxta ./deploy/gcp-release.sh` uploads the current commit and reboots the VM.
+- **Change a setting:** `gcloud compute instances add-metadata skyload --zone europe-west1-b --metadata KEY=VALUE`, then reboot the VM (`gcloud compute instances reset skyload --zone europe-west1-b`).
+- **Check on it:** `gcloud compute instances get-serial-port-output skyload --zone europe-west1-b | grep skyload-startup` shows the install log, whether the app is healthy, and recent app and HTTPS logs.
+
 ## Everyday commands
 
 Run these on the server, inside the `skyload` folder. On Google Cloud (not logged in as root), put `sudo` in front of each `docker` command.

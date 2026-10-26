@@ -5,6 +5,7 @@ import { claimJob, requeueOwnJobs, requeueStaleJobs } from './queue.js'
 import { CancelRequested, JobRun, ShutdownError } from './run.js'
 import { closeTorrentClient, runTorrentJob } from './torrent.js'
 import { runTransferJob } from './transfer.js'
+import { runUrlJob } from './url.js'
 
 const running = new Map<string, { run: JobRun; done: Promise<void> }>()
 let stopping = false
@@ -23,6 +24,7 @@ async function execute(run: JobRun) {
   run.log.info({ name: job.name, attempt: job.attempts }, 'job started')
   try {
     if (job.kind === 'torrent') await runTorrentJob(run)
+    else if (job.kind === 'url') await runUrlJob(run)
     else await runTransferJob(run)
     if (!run.isFinished) await run.finish('completed', { note: null })
     run.log.info('job finished')

@@ -52,7 +52,13 @@ function localClient(accountId: string): CloudClient {
           cb(null, chunk)
         },
       })
-      await pipeline(stream, counter, fs.createWriteStream(target), { signal })
+      try {
+        await pipeline(stream, counter, fs.createWriteStream(target), { signal })
+      } catch (err) {
+        // Like real clouds, an unfinished upload leaves no file behind.
+        fs.rmSync(target, { force: true })
+        throw err
+      }
       return toEntry(target)
     },
     async download(id) {

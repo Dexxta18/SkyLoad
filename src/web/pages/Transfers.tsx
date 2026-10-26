@@ -120,7 +120,7 @@ export default function Transfers() {
         </div>
       )}
 
-      <JobList kind="transfer" />
+      <JobList kinds={['transfer']} />
     </div>
   )
 }

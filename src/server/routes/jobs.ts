@@ -1,12 +1,15 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { and, desc, eq, gt, inArray, notInArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { getAccount } from '../accounts.js'
+import { clientFor, getAccount } from '../accounts.js'
 import { currentUser, requireUser } from '../auth.js'
 import { config } from '../config.js'
 import { db } from '../db/index.js'
-import { ACTIVE_STATUSES, FINISHED_STATUSES, jobs, type Destination, type Job, type JobFile, type TorrentInput, type TransferInput, type User } from '../db/schema.js'
+import { accounts, ACTIVE_STATUSES, FINISHED_STATUSES, jobs, type Destination, type Job, type JobFile, type JobKind, type TorrentInput, type TransferInput, type UrlInput, type User } from '../db/schema.js'
 import { UserError } from '../lib/http.js'
+import { assertAllowedUrl, fileNameFromUrl } from '../lib/safe-fetch.js'
+import { driveDownloadUrl, parseLink } from '../links.js'
+import type { Entry } from '../providers/types.js'
 import { parseMagnet, parseTorrentFile } from '../torrent-input.js'
 
 const destinationSchema = z.object({ accountId: z.string().uuid(), folderId: z.string().min(1).max(2000), folderName: z.string().max(1000) })
@@ -73,14 +76,17 @@ function checkSize(bytes: number) {
   }
 }
 
+const KINDS: JobKind[] = ['torrent', 'transfer', 'url']
+const parseKinds = (value: string | undefined): JobKind[] => (value ?? '').split(',').filter((k): k is JobKind => KINDS.includes(k as JobKind))
+
 export async function jobRoutes(app: FastifyInstance) {
   app.register(async (authed) => {
     authed.addHook('preHandler', requireUser)
 
     authed.get('/api/jobs', async (request) => {
       const user = currentUser(request)
-      const { kind } = request.query as { kind?: string }
-      const where = kind === 'torrent' || kind === 'transfer' ? and(eq(jobs.userId, user.id), eq(jobs.kind, kind)) : eq(jobs.userId, user.id)
+      const kinds = parseKinds((request.query as { kind?: string }).kind)
+      const where = kinds.length ? and(eq(jobs.userId, user.id), inArray(jobs.kind, kinds)) : eq(jobs.userId, user.id)
       const rows = await db().select(summaryColumns).from(jobs).where(where).orderBy(desc(jobs.createdAt)).limit(100)
       return { jobs: rows }
     })
@@ -146,6 +152,58 @@ export async function jobRoutes(app: FastifyInstance) {
       if (duplicate) throw new UserError('That torrent is already in your queue.', 409)
 
       const [job] = await db().insert(jobs).values(values).returning()
+      return { job: publicJob(job) }
+    })
+
+    authed.post('/api/jobs/url', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request) => {
+      const user = currentUser(request)
+      await checkQueueLimit(user.id)
+      const body = z.object({ url: z.string().min(1).max(4000), destination: destinationSchema.optional() }).parse(request.body)
+      const dest = await resolveDestination(user, body.destination)
+      const link = parseLink(body.url)
+
+      let input: UrlInput | undefined
+      let name: string | undefined
+      let totalBytes = 0
+      if (link.kind === 'gdrive') {
+        // Read shared Drive items through a connected Google account, so they are copied
+        // inside Google (fast, no size limit) instead of downloaded through the server.
+        const destAccount = await getAccount(user.id, dest.accountId)
+        const [reader] =
+          destAccount.provider === 'gdrive'
+            ? [destAccount]
+            : await db()
+                .select()
+                .from(accounts)
+                .where(and(eq(accounts.userId, user.id), eq(accounts.provider, 'gdrive'), eq(accounts.needsReauth, false)))
+                .limit(1)
+        let item: Entry | undefined
+        if (reader) item = await clientFor(reader).get(link.id).catch(() => undefined)
+        if (reader && item) {
+          input = { url: link.url, driveSource: { accountId: reader.id, items: [{ id: item.id, name: item.name, isFolder: item.isFolder, size: item.size }] } }
+          name = item.name
+          totalBytes = item.size ?? 0
+        } else if (link.isFolder) {
+          throw new UserError(
+            reader
+              ? "Couldn't open that Google Drive folder. Make sure it's shared as \"Anyone with the link\"."
+              : 'Connect a Google Drive account to copy shared Drive folders.',
+          )
+        } else {
+          input = { url: driveDownloadUrl(link.id, link.resourceKey) }
+          name = 'Google Drive file'
+        }
+      } else {
+        const url = new URL(link.url)
+        assertAllowedUrl(url, config.links.allowPrivate)
+        input = { url: link.url }
+        name = fileNameFromUrl(url)
+      }
+
+      const [job] = await db()
+        .insert(jobs)
+        .values({ userId: user.id, kind: 'url', name: name.slice(0, 500), input, destination: dest, totalBytes, status: 'queued' })
+        .returning()
       return { job: publicJob(job) }
     })
 
@@ -242,9 +300,9 @@ export async function jobRoutes(app: FastifyInstance) {
 
     authed.delete('/api/jobs', async (request) => {
       const user = currentUser(request)
-      const { kind } = request.query as { kind?: string }
+      const kinds = parseKinds((request.query as { kind?: string }).kind)
       const conditions = [eq(jobs.userId, user.id), inArray(jobs.status, FINISHED_STATUSES)]
-      if (kind === 'torrent' || kind === 'transfer') conditions.push(eq(jobs.kind, kind))
+      if (kinds.length) conditions.push(inArray(jobs.kind, kinds))
       await db()
         .delete(jobs)
         .where(and(...conditions))

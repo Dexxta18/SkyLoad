@@ -54,7 +54,7 @@ export const accounts = pgTable(
   (t) => [uniqueIndex('accounts_user_provider_external').on(t.userId, t.provider, t.externalId)],
 )
 
-export type JobKind = 'torrent' | 'transfer'
+export type JobKind = 'torrent' | 'transfer' | 'url'
 export type JobStatus =
   | 'queued'
   | 'starting'
@@ -92,6 +92,12 @@ export interface TransferInput {
   mode: 'copy' | 'move'
 }
 
+export interface UrlInput {
+  url: string
+  /** Set for Google Drive share links: copied through the Drive API instead of downloaded. */
+  driveSource?: { accountId: string; items: TransferItem[] }
+}
+
 export interface JobFile {
   index: number
   /** Path relative to the job root, using "/" separators. */
@@ -120,7 +126,7 @@ export const jobs = pgTable(
     kind: text('kind').$type<JobKind>().notNull(),
     status: text('status').$type<JobStatus>().notNull().default('queued'),
     name: text('name').notNull(),
-    input: jsonb('input').$type<TorrentInput | TransferInput>().notNull(),
+    input: jsonb('input').$type<TorrentInput | TransferInput | UrlInput>().notNull(),
     /** Base64 .torrent metadata, kept so a job can resume or wait for file selection. */
     torrentFile: text('torrent_file'),
     destination: jsonb('destination').$type<Destination>().notNull(),

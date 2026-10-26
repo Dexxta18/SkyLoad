@@ -104,6 +104,10 @@ export const config = {
     downloadLimit: num(env.TORRENT_DOWNLOAD_LIMIT_KBPS, 0) * 1024 || -1,
     uploadLimit: num(env.TORRENT_UPLOAD_LIMIT_KBPS, 0) * 1024 || -1,
   },
+  links: {
+    /** Off by default: stops download links from reaching internal addresses (e.g. the cloud metadata server). */
+    allowPrivate: bool(env.ALLOW_PRIVATE_URLS, false),
+  },
 }
 
 fs.mkdirSync(config.downloadsDir, { recursive: true })

@@ -44,7 +44,7 @@ export type JobStatus = 'queued' | 'starting' | 'metadata' | 'awaiting_selection
 
 export interface JobSummary {
   id: string
-  kind: 'torrent' | 'transfer'
+  kind: 'torrent' | 'transfer' | 'url'
   status: JobStatus
   name: string
   destination: Destination

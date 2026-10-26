@@ -32,9 +32,8 @@ async function expand(source: CloudClient, items: TransferInput['items'], run: J
 }
 
 /** Copies (or moves) files between two connected accounts, streaming without touching disk where possible. */
-export async function runTransferJob(run: JobRun): Promise<void> {
+export async function runTransferJob(run: JobRun, input = run.job.input as TransferInput): Promise<void> {
   const { job } = run
-  const input = job.input as TransferInput
   const sourceAccount = await getAccount(job.userId, input.sourceAccountId)
   const destAccount = await getAccount(job.userId, job.destination.accountId)
   const source = clientFor(sourceAccount)

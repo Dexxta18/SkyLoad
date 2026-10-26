@@ -218,3 +218,99 @@ describe('access control', () => {
     cookie = saved
   })
 })
+
+describe('link downloads', () => {
+  const http = { server: undefined as import('node:http').Server | undefined, base: '' }
+  const report = crypto.randomBytes(2 * 1024 * 1024 + 7)
+  const resume = crypto.randomBytes(300 * 1024)
+
+  before(async () => {
+    const { createServer } = await import('node:http')
+    http.server = createServer((req, res) => {
+      const url = new URL(req.url!, 'http://x')
+      if (url.pathname === '/files/report.bin') {
+        res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': report.length })
+        return res.end(report)
+      }
+      if (url.pathname === '/dl') {
+        // No Content-Length (chunked) and the name only in Content-Disposition.
+        res.writeHead(200, { 'content-type': 'application/pdf', 'content-disposition': `attachment; filename*=UTF-8''R%C3%A9sum%C3%A9%20final.pdf` })
+        res.write(resume.subarray(0, 1000))
+        return setTimeout(() => res.end(resume.subarray(1000)), 50)
+      }
+      if (url.pathname === '/go') {
+        res.writeHead(302, { location: '/files/report.bin' })
+        return res.end()
+      }
+      if (url.pathname === '/page') {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+        return res.end('<html>hello</html>')
+      }
+      if (url.pathname === '/big') {
+        res.writeHead(200, { 'content-type': 'application/octet-stream' })
+        const chunk = Buffer.alloc(1024 * 1024)
+        let sent = 0
+        const pump = () => {
+          while (sent < 12 && res.write(chunk)) sent++
+          if (sent >= 12) return res.end()
+          res.once('drain', () => {
+            sent++
+            pump()
+          })
+        }
+        return pump()
+      }
+      res.writeHead(404)
+      res.end()
+    })
+    await new Promise<void>((resolve) => http.server!.listen(0, '127.0.0.1', resolve))
+    http.base = `http://127.0.0.1:${(http.server!.address() as { port: number }).port}`
+  })
+  after(() => http.server?.close())
+
+  const start = (url: string) => api('POST', '/api/jobs/url', { url, destination: { accountId, folderId: 'root', folderName: 'Local' } })
+
+  test('downloads a direct link into the cloud', async () => {
+    const { status, json } = await start(`${http.base}/files/report.bin`)
+    assert.equal(status, 200, JSON.stringify(json))
+    assert.equal(json.job.kind, 'url')
+    const job = await waitForStatus(json.job.id, ['completed'])
+    assert.equal(job.name, 'report.bin')
+    assert.equal(job.uploadedBytes, report.length)
+    assert.ok(fs.readFileSync(path.join(cloudDir(), 'report.bin')).equals(report))
+  })
+
+  test('uses the server-provided file name and handles unknown sizes', async () => {
+    const { json } = await start(`${http.base}/dl?id=7`)
+    const job = await waitForStatus(json.job.id, ['completed'])
+    assert.equal(job.name, 'Résumé final.pdf')
+    assert.ok(fs.readFileSync(path.join(cloudDir(), 'Résumé final.pdf')).equals(resume))
+  })
+
+  test('follows redirects', async () => {
+    fs.rmSync(path.join(cloudDir(), 'report.bin'), { force: true })
+    const { json } = await start(`${http.base}/go`)
+    await waitForStatus(json.job.id, ['completed'])
+    assert.ok(fs.readFileSync(path.join(cloudDir(), 'report.bin')).equals(report))
+  })
+
+  test('explains why a link failed', async () => {
+    const cases: [string, RegExp][] = [
+      ['/page', /web page, not a file/],
+      ['/big', /larger than/],
+      ['/missing', /not found/],
+    ]
+    for (const [pathName, message] of cases) {
+      const { json } = await start(`${http.base}${pathName}`)
+      const job = await waitForStatus(json.job.id, ['failed'])
+      assert.match(job.error, message, pathName)
+    }
+    // A partial upload of the too-big file must not be left behind.
+    assert.equal(fs.existsSync(path.join(cloudDir(), 'big')), false)
+  })
+
+  test('rejects links that are not http(s)', async () => {
+    const res = await start('ftp://example.com/file.zip')
+    assert.equal(res.status, 400)
+  })
+})

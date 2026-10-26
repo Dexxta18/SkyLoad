@@ -7,9 +7,9 @@ import { isActive } from '../format'
 import { Logo } from './Logo'
 
 const nav = [
-  { to: '/', label: 'Downloads', icon: ArrowDownToLine, kind: 'torrent' as const },
-  { to: '/transfers', label: 'Transfers', icon: ArrowRightLeft, kind: 'transfer' as const },
-  { to: '/accounts', label: 'Accounts', icon: Cloud },
+  { to: '/', label: 'Downloads', icon: ArrowDownToLine, kinds: ['torrent', 'url'] },
+  { to: '/transfers', label: 'Transfers', icon: ArrowRightLeft, kinds: ['transfer'] },
+  { to: '/accounts', label: 'Accounts', icon: Cloud, kinds: [] as string[] },
 ]
 
 export function Shell({ children }: { children: ReactNode }) {
@@ -35,8 +35,8 @@ export function Shell({ children }: { children: ReactNode }) {
             </span>
           </Link>
           <nav className="flex flex-1 items-center gap-1">
-            {nav.map(({ to, label, icon: Icon, kind }) => {
-              const running = kind ? jobs.filter((j) => j.kind === kind && isActive(j.status)).length : 0
+            {nav.map(({ to, label, icon: Icon, kinds }) => {
+              const running = jobs.filter((j) => kinds.includes(j.kind) && isActive(j.status)).length
               return (
                 <NavLink
                   key={to}

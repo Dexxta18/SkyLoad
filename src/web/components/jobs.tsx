@@ -19,12 +19,13 @@ function progressText(job: JobSummary): string {
   const total = job.totalBytes
   if (job.status === 'downloading') {
     if (total) parts.push(`${bytes(job.downloadedBytes)} of ${bytes(total)}`)
+    else if (job.downloadedBytes) parts.push(`${bytes(job.downloadedBytes)} so far`)
     if (job.downloadSpeed) parts.push(`↓ ${speed(job.downloadSpeed)}`)
     const eta = job.downloadSpeed ? duration((total - job.downloadedBytes) / job.downloadSpeed) : ''
     if (eta) parts.push(`${eta} left`)
   } else if (job.status === 'uploading' || job.status === 'transferring') {
     if (total) parts.push(`${bytes(job.uploadedBytes)} of ${bytes(total)} saved`)
-    if (job.uploadSpeed && job.kind === 'transfer') parts.push(speed(job.uploadSpeed))
+    if (job.uploadSpeed && job.kind !== 'torrent') parts.push(speed(job.uploadSpeed))
   } else if (job.status === 'completed') {
     parts.push(`${bytes(total)}${job.fileCount > 1 ? ` · ${job.fileCount} files` : ''}`)
     if (job.finishedAt) parts.push(timeAgo(job.finishedAt))
@@ -56,7 +57,8 @@ export function JobCard({ job, onChooseFiles }: { job: JobSummary; onChooseFiles
 
   const showProgress = active || job.status === 'queued'
   const uploadedFraction = job.uploadedBytes / total
-  const downloadedFraction = job.kind === 'torrent' ? job.downloadedBytes / total : uploadedFraction
+  const twoStage = job.kind === 'torrent' || (job.kind === 'url' && job.status === 'downloading')
+  const downloadedFraction = twoStage ? job.downloadedBytes / total : uploadedFraction
 
   return (
     <li className="card p-4">
@@ -84,7 +86,7 @@ export function JobCard({ job, onChooseFiles }: { job: JobSummary; onChooseFiles
 
           {showProgress && job.totalBytes > 0 && (
             <div className="mt-3">
-              <ProgressBar value={uploadedFraction} secondary={job.kind === 'torrent' ? downloadedFraction : undefined} />
+              <ProgressBar value={uploadedFraction} secondary={twoStage ? downloadedFraction : undefined} />
             </div>
           )}
 
@@ -248,15 +250,17 @@ export function FileSelectModal({ jobId, onClose }: { jobId: string; onClose(): 
   )
 }
 
-export function JobList({ kind }: { kind: JobSummary['kind'] }) {
-  const { jobs, loaded, reload } = useJobs(kind)
+export function JobList({ kinds }: { kinds: JobSummary['kind'][] }) {
+  const { jobs: all, loaded, reload } = useJobs()
+  const jobs = all.filter((j) => kinds.includes(j.kind))
+  const kind = kinds[0]
   const { toast } = useApp()
   const [choosing, setChoosing] = useState<string | null>(null)
   const finished = jobs.filter((j) => isFinished(j.status))
 
   const clearFinished = async () => {
     try {
-      await api(`/api/jobs?kind=${kind}`, { method: 'DELETE' })
+      await api(`/api/jobs?kind=${kinds.join(',')}`, { method: 'DELETE' })
       await reload()
     } catch (e) {
       toast((e as Error).message, 'error')
@@ -281,7 +285,7 @@ export function JobList({ kind }: { kind: JobSummary['kind'] }) {
         <div className="card">
           {kind === 'torrent' ? (
             <EmptyState icon={<Magnet className="size-6" />} title="No downloads yet">
-              Paste a magnet link above. It downloads on our servers and appears in your cloud.
+              Paste a magnet link or a download link above. It downloads on our servers and appears in your cloud.
             </EmptyState>
           ) : (
             <EmptyState icon={<ArrowRightLeft className="size-6" />} title="No transfers yet">

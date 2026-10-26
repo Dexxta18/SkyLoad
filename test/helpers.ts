@@ -15,6 +15,9 @@ export function setupEnv() {
     LOCAL_PROVIDER_DIR: path.join(base, 'cloud'),
     TORRENT_DHT: 'false',
     ALLOW_PRIVATE_TRACKERS: '1',
+    ALLOW_PRIVATE_URLS: '1',
+    // ~10 MB, so size-limit paths can be tested with small files.
+    MAX_TORRENT_SIZE_GB: '0.01',
     WORKER_POLL_MS: '200',
     MIN_FREE_DISK_GB: '0',
     APP_URL: 'http://localhost:3000',

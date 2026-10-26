@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDownToLine, FileUp, Link2, X } from 'lucide-react'
+import { ArrowDownToLine, FileUp, Globe, Link2, X } from 'lucide-react'
 import { api, type Destination, type JobSummary } from '../api'
 import { DestinationPicker } from '../components/destination'
 import { JobList } from '../components/jobs'
@@ -10,7 +10,8 @@ import { useApp, useJobs } from '../state'
 export default function Downloads() {
   const { me, config, toast } = useApp()
   const { upsert } = useJobs()
-  const [tab, setTab] = useState<'magnet' | 'file'>('magnet')
+  const [tab, setTab] = useState<'magnet' | 'file' | 'link'>('magnet')
+  const [link, setLink] = useState('')
   const [magnet, setMagnet] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [destination, setDestination] = useState<Destination | undefined>(me?.settings.defaultDestination)
@@ -23,14 +24,16 @@ export default function Downloads() {
     if (!destination && me?.settings.defaultDestination) setDestination(me.settings.defaultDestination)
   }, [me?.settings.defaultDestination, destination])
 
-  const ready = destination && (tab === 'magnet' ? magnet.trim().length > 0 : file !== null)
+  const ready = destination && (tab === 'magnet' ? magnet.trim().length > 0 : tab === 'link' ? link.trim().length > 0 : file !== null)
 
   const submit = async () => {
     if (!ready) return
     setBusy(true)
     try {
       let res: { job: JobSummary }
-      if (tab === 'file' && file) {
+      if (tab === 'link') {
+        res = await api('/api/jobs/url', { body: { url: link.trim(), destination } })
+      } else if (tab === 'file' && file) {
         const form = new FormData()
         form.set('destination', JSON.stringify(destination))
         form.set('chooseFiles', String(chooseFiles))
@@ -42,7 +45,8 @@ export default function Downloads() {
       upsert(res.job)
       setMagnet('')
       setFile(null)
-      toast(chooseFiles ? 'Added. Pick your files once the details load.' : 'Download started')
+      setLink('')
+      toast(chooseFiles && tab !== 'link' ? 'Added. Pick your files once the details load.' : 'Download started')
     } catch (e) {
       toast((e as Error).message, 'error')
     } finally {
@@ -60,8 +64,8 @@ export default function Downloads() {
   return (
     <div>
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Download a torrent</h1>
-        <p className="muted mt-1">We download it on our servers and save it straight to your cloud. Nothing touches your device.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Download to your cloud</h1>
+        <p className="muted mt-1">Paste a magnet link, a .torrent file or a download link. We fetch it on our servers and save it straight to your cloud. Nothing touches your device.</p>
       </header>
 
       <form
@@ -84,8 +88,9 @@ export default function Downloads() {
         <div className="mb-4 inline-flex rounded-xl bg-slate-100 p-1 dark:bg-white/5" role="tablist">
           {(
             [
-              ['magnet', 'Magnet link', Link2],
-              ['file', '.torrent file', FileUp],
+              ['magnet', 'Magnet', Link2],
+              ['file', '.torrent', FileUp],
+              ['link', 'Link', Globe],
             ] as const
           ).map(([id, label, Icon]) => (
             <button
@@ -101,7 +106,21 @@ export default function Downloads() {
           ))}
         </div>
 
-        {tab === 'magnet' ? (
+        {tab === 'link' ? (
+          <div>
+            <input
+              className="input font-mono text-[13px]"
+              type="url"
+              inputMode="url"
+              placeholder="https://example.com/file.zip"
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              spellCheck={false}
+              aria-label="Download link"
+            />
+            <p className="muted mt-2 text-xs">A direct download link, or a Google Drive or Dropbox share link. Shared Google Drive files and folders are copied instantly.</p>
+          </div>
+        ) : tab === 'magnet' ? (
           <textarea
             className="input min-h-24 resize-y font-mono text-[13px]"
             placeholder="magnet:?xt=urn:btih:…"
@@ -147,14 +166,16 @@ export default function Downloads() {
           </button>
         </div>
 
-        <label className="mt-4 flex items-center gap-2 text-sm">
-          <input type="checkbox" className="size-4 accent-brand-600" checked={chooseFiles} onChange={(e) => setChooseFiles(e.target.checked)} />
-          Let me choose which files to download
-        </label>
-        <p className="muted mt-3 text-xs">Up to {bytes(config.limits.maxTorrentBytes)} per torrent. Only download content you have the right to share.</p>
+        {tab !== 'link' && (
+          <label className="mt-4 flex items-center gap-2 text-sm">
+            <input type="checkbox" className="size-4 accent-brand-600" checked={chooseFiles} onChange={(e) => setChooseFiles(e.target.checked)} />
+            Let me choose which files to download
+          </label>
+        )}
+        <p className="muted mt-3 text-xs">Up to {bytes(config.limits.maxTorrentBytes)} per download. Only download content you have the right to share.</p>
       </form>
 
-      <JobList kind="torrent" />
+      <JobList kinds={['torrent', 'url']} />
     </div>
   )
 }
